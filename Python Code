@@ -1,0 +1,109 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import warnings
+import requests
+import zipfile
+import io
+
+warnings.filterwarnings('ignore')
+
+print("--- Step 1: Load and Prepare Data ---")
+# The original URL was dead (404 Not Found). This is the corrected, stable URL.
+url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip'
+
+# Download the file and extract it in memory
+r = requests.get(url)
+z = zipfile.ZipFile(io.BytesIO(r.content))
+
+# The file inside the zip is tab-separated and has no header, so we specify that
+df = pd.read_csv(z.open('SMSSpamCollection'), sep='\t', header=None, names=['label', 'message'])
+
+# Map text labels to numerical labels
+df['label_num'] = df.label.map({'ham': 0, 'spam': 1})
+
+print("Dataset loaded and prepared successfully.")
+print("First 5 rows of the dataset:")
+print(df.head())
+print("\nDataset label distribution:")
+print(df['label'].value_counts())
+
+print("\n\n--- Step 2: Define Features (X) and Target (y) and Split Data ---")
+
+X = df['message']
+y = df['label_num']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"Data split into {len(X_train)} training samples and {len(X_test)} testing samples.")
+
+print("\n\n--- Step 3: Vectorize Text Data using TF-IDF ---")
+
+vectorizer = TfidfVectorizer(stop_words='english', lowercase=True)
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_test_tfidf = vectorizer.transform(X_test)
+
+print("Text data has been converted into numerical vectors.")
+
+print("\n\n--- Step 4: Train the Spam Filter Model ---")
+
+model = MultinomialNB()
+model.fit(X_train_tfidf, y_train)
+
+print("Model training complete using Multinomial Naive Bayes.")
+
+print("\n\n--- Step 5: Evaluate the Model ---")
+
+y_pred = model.predict(X_test_tfidf)
+accuracy = accuracy_score(y_test, y_pred)
+conf_matrix = confusion_matrix(y_test, y_pred)
+class_report = classification_report(y_test, y_pred, target_names=['Ham', 'Spam'])
+
+print("Model Evaluation on Test Data:")
+print("="*30)
+print(f"Accuracy: {accuracy:.4f}")
+print("\nConfusion Matrix:")
+print("         Predicted Ham  Predicted Spam")
+print(f"Actual Ham    {conf_matrix[0][0]:<10}   {conf_matrix[0][1]:<10}")
+print(f"Actual Spam   {conf_matrix[1][0]:<10}   {conf_matrix[1][1]:<10}")
+print("\nClassification Report:")
+print(class_report)
+
+print("\n\n--- Step 6: Create a Predictive System ---")
+
+def predict_message(message_text):
+    message_tfidf = vectorizer.transform([message_text])
+    prediction_num = model.predict(message_tfidf)[0]
+    prediction_proba = model.predict_proba(message_tfidf)[0]
+
+    if prediction_num == 1:
+        result = "This is likely SPAM."
+        confidence = prediction_proba[1]
+    else:
+        result = "This is likely NOT SPAM (Ham)."
+        confidence = prediction_proba[0]
+        
+    print(f'Message: "{message_text}"')
+    print(f'Verdict: {result}')
+    print(f'Confidence: {confidence:.2%}\n')
+
+print("Predictive function is ready. Testing with new messages.\n")
+
+print("--- Testing New Messages ---")
+print("="*30)
+
+spam_message_1 = "Congratulations! You've won a FREE $1000 Walmart gift card. Go to http://bit.ly/claim-yours to claim now."
+predict_message(spam_message_1)
+
+ham_message_1 = "Hey, are we still on for dinner tonight at 7pm? Let me know."
+predict_message(ham_message_1)
+
+spam_message_2 = "URGENT: Your account has been suspended due to suspicious activity. Please verify your identity by clicking here: sketchy-link.com"
+predict_message(spam_message_2)
+
+ham_message_2 = "Can you please send me the report from yesterday's meeting? Thanks."
+predict_message(ham_message_2)
